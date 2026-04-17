@@ -4,69 +4,69 @@ A high-performance, strictly-typed, and highly configurable hierarchical comment
 
 Built on **Materialized Paths** for database queries, meaning deeply nested comment trees are retrieved in a single, fast SQL query without typical recursive performance bottlenecks.
 
-## Features
+## 🚀 Integration Guide (For Main Projects)
 
-- ⚡️ **Materialized Paths**: Instant deep-tree loading using exact prefix sorting logic (e.g., `0001/0002/0003`).
-- 📁 **Entity Hierarchy Support**: Query comments at an exact entity level (e.g., `video:1/episode:4`) or fetch all comments across a parent group using a wildcard prefix (`video:1/%`).
-- 🛠️ **Loose Configuration**: Inject your own `knex` instance directly to share database pools, or configure via `.env` variables independently.
-- 🚀 **Next.js & React Ready**: Exported API route handlers and a generic, customizable React `<CommentSection />` component.
-- 📦 **Automated Migrations**: Includes a built-in CLI and programmatic exporters to execute Knex table creation seamlessly.
+Follow these steps to integrate the comment package into another project (e.g., a Next.js app) that already has an existing Database and Knex pool:
 
-## Installation
+### Step 1: Install the Package
+
+Since this project is hosted on GitHub, you can install it directly into your main project via the repository URL:
 
 ```bash
-npm install # add to your monorepo workspace or project
+npm install github:inhvn/comment
+# or
+yarn add github:inhvn/comment
 ```
+*(Note: Your main project must have `react`, `react-dom`, and `knex` installed as they are required peer dependencies).*
 
-*(Note: Ensure you have `react`, `react-dom`, and `knex` installed in your host project as they are peer dependencies).*
+---
 
-## Configuration
+### Step 2: Migrate Database (Creating the `comments` table)
 
-You can configure the library globally in your application startup (e.g., inside an API route or a central database initialization file) or strictly via environment variables.
+The package requires a `comments` table to be created in your database. You have two ways to run the migration:
 
-### Using `.env`
+**Option 1: Using `.env` for CLI (Standalone)**  
+Make sure your existing project's `.env` contains the required variables:
 ```env
 COMMENT_DB_URL=mysql2://user:pass@localhost:3306/mydb
 COMMENT_TABLE_NAME=comments
 ```
-
-### Using Code Injection
-```typescript
-import { configure } from 'comment'; // Requires setting up package aliases
-import { db } from '@/lib/db'; // Your existing Knex instance
-
-configure({
-  knexInstance: db,
-  tableName: 'custom_comments_table',
-});
-```
-
-## Migrations
-
-The package comes with an executable CLI to spin up the required tables automatically.
-
-To run via CLI:
+Then run the migration script:
 ```bash
 node node_modules/comment/bin/cli.js migrate
 ```
 
-Or you can trigger it programmatically inside your backend pipeline:
+**Option 2: Programmatically via Code (Recommended for CI/CD)**  
+You can require the package and directly inject your MAIN PROJECT's existing Knex connection:
 ```typescript
-import { up, down } from 'comment';
+import { configure, up } from 'comment';
+import { db } from '@/lib/db'; // The existing Knex instance in your main project
 
-await up(); // Creates the comments table with proper indexes
-// await down(); // Drops the comments table
+// The Comment package will execute migrations using your existing connection pool
+configure({ knexInstance: db, tableName: 'comments' });
+
+await up(); // Initializes the table
 ```
 
-## Usage
+---
 
-### 1. Next.js API Route (App Router)
+### Step 3: Setup Backend API (Next.js Route Example)
 
-Create standard route handlers in your Next.js application at `app/api/comments/route.ts`:
+The package bundles an API Controller that handles all standard HTTP operations (GET, POST, PUT, DELETE). You just need to connect the Next.js router to this handler.
+
+In your Next.js App Router (create a file `app/api/comments/route.ts`):
 
 ```typescript
+import { configure } from 'comment/dist/core/config';
 import { createCommentsHandler } from 'comment/dist/api';
+import { db } from '@/lib/db'; // Your main project's Knex instance
 
+// 🔥 Crucial: Map the Database Context from the Main Project to the Comment package
+configure({
+  knexInstance: db, 
+});
+
+// Inject the operations into NextRequest standard HTTP formats (Next 13+)
 const handler = createCommentsHandler();
 
 export const GET = handler.GET;
@@ -75,38 +75,54 @@ export const PUT = handler.PUT;
 export const DELETE = handler.DELETE;
 ```
 
-### 2. React UI Integration
+---
 
-Import the out-of-the-box `<CommentSection />` into your frontend. It inherently manages the network fetching, tree rendering, and recursive nested reply states directly.
+### Step 4: Frontend Integration (React UI)
+
+You can easily render the pre-built `<CommentSection />` UI component anywhere in your frontend.
+
+It automatically handles data fetching, layered tree rendering, and internal post/reply actions out of the box:
 
 ```tsx
+// Example Page: app/video/[id]/page.tsx
 import { CommentSection } from 'comment/dist/react';
+import { useAuth } from '@/hooks/useAuth'; // Custom auth hook from your system
 
-export default function EpisodePage() {
-  // Use your auth provider here
-  const user = { id: 'user_123', name: 'John Doe' };
+export default function VideoPage({ params }) {
+  const { user } = useAuth(); // Retrieve current user data
 
   return (
     <main>
-      <h1>Episode 4</h1>
+      <h1>Episode Content</h1>
       
+      {/* 
+        `entityPath` defines the root ID containing the Comment. 
+        By configuring it as a Path Hierarchy, you can easily aggregate comments later. 
+        Example: "video:1/episode:2" 
+      */}
       <CommentSection 
-        entityPath="video:A/episode:4" 
-        apiPath="/api/comments"
-        currentUser={user} 
+        entityPath={`video:${params.id}/episode:${params.episodeId}`}
+        apiPath="/api/comments" // Maps to the API route you created in Step 3
+        currentUser={user ? { id: user.id, name: user.name } : undefined} 
       />
     </main>
   );
 }
 ```
 
-### 3. Querying by Parent Hierarchy Programmatically
+---
 
-Because of the `entity_path` architecture, you aren't forced to fetch comments only for a strictly bound page. If you want to show "All Comments for Video A" (aggregating across all child episodes), you can query by a prefix wildcard:
+## Hierarchy Feature (Advanced Querying)
+
+The most powerful aspect of this package's database architecture is its support for multi-level **Wildcard** queries.
+
+What if a user comments on a specific episode (`video:A/episode:4`), but you want to load ALL comments for the entire "Video A" regardless of the episode on your Video Admin Dashboard?
+
+There is no need for loop requests or calling separate APIs. Our codebase already handles `PREFIX LIKE` queries natively. You can call the service directly in a Node context:
 
 ```typescript
 import { getComments } from 'comment';
 
-// Fetches ALL comments starting with 'video:A/'
+// Fetches ALL comments whose target starts with 'video:A/' (Includes ep1, ep2... ep.n)
 const allVideoComments = await getComments({ entity_path_prefix: 'video:A/' });
 ```
