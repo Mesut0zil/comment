@@ -18,6 +18,14 @@ export interface CommentConfig {
     enableRedis?: boolean;
     /** Rate limiting options. Pass false to disable entirely. */
     rateLimit?: RateLimitConfig | false;
+    /** Table name for users. If provided, comments will be left-joined to fetch author details. */
+    userTableName?: string;
+    /** User ID column name in user table. Default: 'id' */
+    userIdCol?: string;
+    /** Username column name in user table. Default: 'name' */
+    userNameCol?: string;
+    /** Avatar column name in user table. Default: 'avatar' */
+    userAvatarCol?: string;
 }
 
 let internalKnex: Knex | null = null;
@@ -72,4 +80,20 @@ export function getRateLimitConfig(): RateLimitConfig | false {
         max: cfg.max ?? Number(process.env['COMMENT_RATE_LIMIT_MAX'] ?? 60),
         windowSec: cfg.windowSec ?? Number(process.env['COMMENT_RATE_LIMIT_WINDOW_SEC'] ?? 60),
     };
+}
+
+export function getUserTableName(): string | undefined {
+    return currentConfig.userTableName || process.env['COMMENT_USER_TABLE_NAME'];
+}
+
+export function getUserIdCol(): string {
+    return currentConfig.userIdCol || process.env['COMMENT_USER_ID_COL'] || 'id';
+}
+
+export function getUserNameCol(): string {
+    return currentConfig.userNameCol || process.env['COMMENT_USER_NAME_COL'] || 'name';
+}
+
+export function getUserAvatarCol(): string {
+    return currentConfig.userAvatarCol || process.env['COMMENT_USER_AVATAR_COL'] || 'avatar';
 }

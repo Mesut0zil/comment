@@ -91,6 +91,8 @@ export async function cacheIndexComments(
             created_at: row.created_at,
             updated_at: row.updated_at,
             deleted_at: row.deleted_at ?? '',
+            author_name: row.author_name ?? '',
+            author_avatar: row.author_avatar ?? '',
         });
         pipeline.expire(dataKey(row.id), ttl);
     }
@@ -161,6 +163,8 @@ export async function cacheFetchPage(
             created_at: hash['created_at'] as string,
             updated_at: hash['updated_at'] as string,
             deleted_at: hash['deleted_at'] || null,
+            author_name: hash['author_name'] || null,
+            author_avatar: hash['author_avatar'] || null,
         });
     }
 

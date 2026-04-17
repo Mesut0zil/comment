@@ -1,4 +1,4 @@
-import { getKnex, getTableName, getSiteName } from './config';
+import { getKnex, getTableName, getSiteName, getUserTableName, getUserIdCol, getUserNameCol, getUserAvatarCol } from './config';
 import { cacheFetchPage, cacheIndexComments, cacheInvalidateEntity, cacheInvalidateComment } from './cache';
 
 export interface CommentInput {
@@ -20,6 +20,8 @@ export interface CommentRow {
     created_at: string;
     updated_at: string;
     deleted_at: string | null;
+    author_name?: string | null;
+    author_avatar?: string | null;
 }
 
 // Generate the 4-digit padded ID for materialized paths
@@ -66,7 +68,23 @@ export async function createComment(data: CommentInput): Promise<CommentRow> {
                 depth: depth
             });
 
-        const finalRow = await trx(table).where({ id: insertedId }).first();
+        let finalRowQuery = trx(table).where({ [`${table}.id`]: insertedId });
+
+        const userTable = getUserTableName();
+        if (userTable) {
+            const idCol = getUserIdCol();
+            const nameCol = getUserNameCol();
+            const avatarCol = getUserAvatarCol();
+            finalRowQuery = finalRowQuery
+                .leftJoin(userTable, `${table}.user_id`, `${userTable}.${idCol}`)
+                .select(`${table}.*`)
+                .select(`${userTable}.${nameCol} as author_name`)
+                .select(`${userTable}.${avatarCol} as author_avatar`);
+        } else {
+            finalRowQuery = finalRowQuery.select(`${table}.*`);
+        }
+
+        const finalRow = await finalRowQuery.first();
         const result = finalRow as CommentRow;
 
         // Invalidate cache for this entity
@@ -128,19 +146,32 @@ export async function getComments(query: GetCommentsQuery): Promise<PaginatedCom
 
     // Fetch pageSize+1 to detect hasMore
     let q = knex(table)
-        .whereNull('deleted_at')
-        .where({ site: getSiteName() })
-        .orderBy('comment_path', 'asc')
+        .whereNull(`${table}.deleted_at`)
+        .where({ [`${table}.site`]: getSiteName() })
+        .orderBy(`${table}.comment_path`, 'asc')
         .limit(pageSize + 1);
 
+    const userTable = getUserTableName();
+    if (userTable) {
+        const idCol = getUserIdCol();
+        const nameCol = getUserNameCol();
+        const avatarCol = getUserAvatarCol();
+        q = q.leftJoin(userTable, `${table}.user_id`, `${userTable}.${idCol}`)
+             .select(`${table}.*`)
+             .select(`${userTable}.${nameCol} as author_name`)
+             .select(`${userTable}.${avatarCol} as author_avatar`);
+    } else {
+        q = q.select(`${table}.*`);
+    }
+
     if (query.entity_path) {
-        q = q.where({ entity_path: query.entity_path });
+        q = q.where({ [`${table}.entity_path`]: query.entity_path });
     } else if (query.entity_path_prefix) {
-        q = q.where('entity_path', 'LIKE', `${query.entity_path_prefix}%`);
+        q = q.where(`${table}.entity_path`, 'LIKE', `${query.entity_path_prefix}%`);
     }
 
     if (afterPath) {
-        q = q.where('comment_path', '>', afterPath);
+        q = q.where(`${table}.comment_path`, '>', afterPath);
     }
 
     const rows: CommentRow[] = await q;
