@@ -9,6 +9,7 @@ export async function up() {
         await knex.schema.createTable(tableName, (table) => {
             table.bigIncrements('id').primary();
             table.string('user_id').notNullable();
+            table.string('site').notNullable();
             table.text('content').notNullable();
 
             table.integer('depth').notNullable().defaultTo(0);
@@ -20,7 +21,7 @@ export async function up() {
             table.timestamp('deleted_at').nullable();
 
             // Indexes for efficient path-based hierarchical querying
-            table.index(['entity_path', 'comment_path'], 'idx_entity_path_comment_path');
+            table.index(['site', 'entity_path', 'comment_path'], 'idx_site_entity_path_comment_path');
             table.index(['parent_id'], 'idx_parent_id');
             table.index(['user_id'], 'idx_user_id');
         });

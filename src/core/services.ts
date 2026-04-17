@@ -1,4 +1,4 @@
-import { getKnex, getTableName } from './config';
+import { getKnex, getTableName, getSiteName } from './config';
 
 export interface CommentInput {
     user_id: string;
@@ -9,6 +9,7 @@ export interface CommentInput {
 
 export interface CommentRow {
     id: number;
+    site: string;
     user_id: string;
     content: string;
     depth: number;
@@ -32,6 +33,7 @@ export async function createComment(data: CommentInput): Promise<CommentRow> {
     return await knex.transaction(async (trx) => {
         // 1. Insert comment temporarily without a valid comment_path
         const [insertedId] = await trx(table).insert({
+            site: getSiteName(),
             user_id: data.user_id,
             content: data.content,
             entity_path: data.entity_path,
@@ -79,7 +81,7 @@ export async function getComments(query: GetCommentsQuery): Promise<CommentRow[]
     const knex = getKnex();
     const table = getTableName();
 
-    let q = knex(table).whereNull('deleted_at');
+    let q = knex(table).whereNull('deleted_at').where({ site: getSiteName() });
 
     if (query.entity_path) {
         q = q.where({ entity_path: query.entity_path });

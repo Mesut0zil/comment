@@ -4,11 +4,13 @@ export interface CommentConfig {
     knexInstance?: Knex;
     dbUrl?: string;
     tableName?: string;
+    site?: string;
 }
 
 let internalKnex: Knex | null = null;
 let currentConfig: CommentConfig = {
     tableName: 'comments',
+    site: 'default',
 };
 
 export function configure(config: CommentConfig) {
@@ -34,4 +36,8 @@ export function getKnex(): Knex {
 
 export function getTableName(): string {
     return currentConfig.tableName || process.env['COMMENT_TABLE_NAME'] || 'comments';
+}
+
+export function getSiteName(): string {
+    return currentConfig.site || process.env['COMMENT_SITE_NAME'] || 'default';
 }
