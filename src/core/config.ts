@@ -1,16 +1,30 @@
 import knex, { type Knex } from 'knex';
 
+export interface RateLimitConfig {
+    /** Max requests per window per IP. Default: 60 */
+    max?: number;
+    /** Window size in seconds. Default: 60 */
+    windowSec?: number;
+}
+
 export interface CommentConfig {
     knexInstance?: Knex;
     dbUrl?: string;
     tableName?: string;
     site?: string;
+    /** ioredis-compatible URL, e.g. redis://localhost:6379. */
+    redisUrl?: string;
+    /** Explicitly enable Redis caching. Requires redisUrl to also be set. Default: false */
+    enableRedis?: boolean;
+    /** Rate limiting options. Pass false to disable entirely. */
+    rateLimit?: RateLimitConfig | false;
 }
 
 let internalKnex: Knex | null = null;
 let currentConfig: CommentConfig = {
     tableName: 'comments',
     site: 'default',
+    rateLimit: { max: 60, windowSec: 60 },
 };
 
 export function configure(config: CommentConfig) {
@@ -40,4 +54,22 @@ export function getTableName(): string {
 
 export function getSiteName(): string {
     return currentConfig.site || process.env['COMMENT_SITE_NAME'] || 'default';
+}
+
+export function getRedisUrl(): string | undefined {
+    return currentConfig.redisUrl || process.env['COMMENT_REDIS_URL'];
+}
+
+export function isRedisEnabled(): boolean {
+    const flag = currentConfig.enableRedis ?? process.env['COMMENT_ENABLE_REDIS'] === 'true';
+    return flag === true && !!getRedisUrl();
+}
+
+export function getRateLimitConfig(): RateLimitConfig | false {
+    if (currentConfig.rateLimit === false) return false;
+    const cfg = currentConfig.rateLimit || {};
+    return {
+        max: cfg.max ?? Number(process.env['COMMENT_RATE_LIMIT_MAX'] ?? 60),
+        windowSec: cfg.windowSec ?? Number(process.env['COMMENT_RATE_LIMIT_WINDOW_SEC'] ?? 60),
+    };
 }

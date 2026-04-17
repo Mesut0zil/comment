@@ -1,4 +1,5 @@
 import { getKnex, getTableName, getSiteName } from './config';
+import { cacheFetchPage, cacheIndexComments, cacheInvalidateEntity, cacheInvalidateComment } from './cache';
 
 export interface CommentInput {
     user_id: string;
@@ -66,7 +67,12 @@ export async function createComment(data: CommentInput): Promise<CommentRow> {
             });
 
         const finalRow = await trx(table).where({ id: insertedId }).first();
-        return finalRow as CommentRow;
+        const result = finalRow as CommentRow;
+
+        // Invalidate cache for this entity
+        await cacheInvalidateEntity(data.entity_path);
+
+        return result;
     });
 }
 
@@ -74,41 +80,112 @@ export interface GetCommentsQuery {
     entity_path?: string;
     entity_path_prefix?: string; // Query using LIKE 'prefix/%'
     limit?: number;
-    offset?: number;
+    /**
+     * Opaque cursor string returned from previous response.
+     * When provided, results start after the comment with this comment_path.
+     */
+    cursor?: string;
 }
 
-export async function getComments(query: GetCommentsQuery): Promise<CommentRow[]> {
+export interface PaginatedComments {
+    data: CommentRow[];
+    /** Pass this as `cursor` to fetch the next page. Null when no more pages. */
+    nextCursor: string | null;
+    hasMore: boolean;
+}
+
+/** Decode a base64 cursor back to a comment_path string */
+function decodeCursor(cursor: string): string {
+    return Buffer.from(cursor, 'base64').toString('utf-8');
+}
+
+/** Encode a comment_path into an opaque base64 cursor */
+function encodeCursor(commentPath: string): string {
+    return Buffer.from(commentPath, 'utf-8').toString('base64');
+}
+
+export async function getComments(query: GetCommentsQuery): Promise<PaginatedComments> {
+    const pageSize = query.limit ?? 20;
+    const afterPath = query.cursor ? decodeCursor(query.cursor) : null;
+
+    // --- Cache read (ZSET + Hash) — only for simple entity_path queries ---
+    if (query.entity_path) {
+        const cached = await cacheFetchPage(query.entity_path, afterPath, pageSize);
+        if (cached !== null) {
+            const hasMore = cached.length > pageSize;
+            const data = hasMore ? cached.slice(0, pageSize) : cached;
+            return {
+                data,
+                hasMore,
+                nextCursor: hasMore ? encodeCursor(data[data.length - 1]!.comment_path) : null,
+            };
+        }
+    }
+
+    // --- DB fallback ---
     const knex = getKnex();
     const table = getTableName();
 
-    let q = knex(table).whereNull('deleted_at').where({ site: getSiteName() });
+    // Fetch pageSize+1 to detect hasMore
+    let q = knex(table)
+        .whereNull('deleted_at')
+        .where({ site: getSiteName() })
+        .orderBy('comment_path', 'asc')
+        .limit(pageSize + 1);
 
     if (query.entity_path) {
         q = q.where({ entity_path: query.entity_path });
     } else if (query.entity_path_prefix) {
-        // Use prefix matching to grab a whole group of comments (e.g. "video:1/%")
         q = q.where('entity_path', 'LIKE', `${query.entity_path_prefix}%`);
     }
 
-    q = q.orderBy('comment_path', 'asc'); // Ensures the tree can be reconstructed sequentially
+    if (afterPath) {
+        q = q.where('comment_path', '>', afterPath);
+    }
 
-    if (query.limit) q = q.limit(query.limit);
-    if (query.offset) q = q.offset(query.offset);
+    const rows: CommentRow[] = await q;
 
-    return await q;
+    const hasMore = rows.length > pageSize;
+    const data = hasMore ? rows.slice(0, pageSize) : rows;
+    const nextCursor = hasMore ? encodeCursor(data[data.length - 1]!.comment_path) : null;
+
+    // --- Cache write: populate ZSET index + Hash entries ---
+    if (query.entity_path && data.length > 0) {
+        await cacheIndexComments(query.entity_path, data);
+    }
+
+    return { data, hasMore, nextCursor };
 }
 
 export async function updateComment(id: number, content: string): Promise<number> {
     const knex = getKnex();
     const table = getTableName();
-    return await knex(table).where({ id }).update({ content, updated_at: knex.fn.now() });
+
+    // Fetch before update so we can invalidate the right entity
+    const row = await knex(table).where({ id }).select('entity_path').first();
+    const result = await knex(table).where({ id }).update({ content, updated_at: knex.fn.now() });
+
+    if (row) {
+        await cacheInvalidateComment(id);        // remove stale Hash
+        await cacheInvalidateEntity(row.entity_path); // remove stale ZSET index
+    }
+
+    return result;
 }
 
 export async function deleteComment(id: number): Promise<number> {
-    // Soft delete default
     const knex = getKnex();
     const table = getTableName();
-    return await knex(table).where({ id }).update({ deleted_at: knex.fn.now() });
+
+    const row = await knex(table).where({ id }).select('entity_path').first();
+    const result = await knex(table).where({ id }).update({ deleted_at: knex.fn.now() });
+
+    if (row) {
+        await cacheInvalidateComment(id);        // remove stale Hash
+        await cacheInvalidateEntity(row.entity_path); // remove stale ZSET index
+    }
+
+    return result;
 }
 
 // Tree Builder Logic

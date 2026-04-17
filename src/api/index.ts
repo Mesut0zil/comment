@@ -1,20 +1,27 @@
 import { createComment, getComments, deleteComment, updateComment } from '../core/services';
+import { checkRateLimit, getRequestIp } from '../core/rate-limit';
 import type { NextRequest } from 'next/server';
 
 export function createCommentsHandler() {
     return {
         async GET(req: NextRequest) {
+            const ip = getRequestIp(req);
+            if (!await checkRateLimit(ip)) {
+                return new Response(JSON.stringify({ error: 'Too many requests' }), {
+                    status: 429,
+                    headers: { 'Retry-After': '60' }
+                });
+            }
+
             const url = new URL(req.url);
             const entity_path = url.searchParams.get('entity_path') || undefined;
             const entity_path_prefix = url.searchParams.get('entity_path_prefix') || undefined;
-
-            const query: any = {};
-            if (entity_path) query.entity_path = entity_path;
-            if (entity_path_prefix) query.entity_path_prefix = entity_path_prefix;
+            const cursor = url.searchParams.get('cursor') || undefined;
+            const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
 
             try {
-                const results = await getComments(query);
-                return new Response(JSON.stringify(results), {
+                const result = await getComments({ entity_path, entity_path_prefix, cursor, limit });
+                return new Response(JSON.stringify(result), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -24,6 +31,14 @@ export function createCommentsHandler() {
         },
 
         async POST(req: NextRequest) {
+            const ip = getRequestIp(req);
+            if (!await checkRateLimit(ip)) {
+                return new Response(JSON.stringify({ error: 'Too many requests' }), {
+                    status: 429,
+                    headers: { 'Retry-After': '60' }
+                });
+            }
+
             const body = await req.json();
             try {
                 const result = await createComment(body);
@@ -37,6 +52,11 @@ export function createCommentsHandler() {
         },
 
         async PUT(req: NextRequest) {
+            const ip = getRequestIp(req);
+            if (!await checkRateLimit(ip)) {
+                return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 });
+            }
+
             const body = await req.json();
             try {
                 const result = await updateComment(body.id, body.content);
@@ -50,6 +70,11 @@ export function createCommentsHandler() {
         },
 
         async DELETE(req: NextRequest) {
+            const ip = getRequestIp(req);
+            if (!await checkRateLimit(ip)) {
+                return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 });
+            }
+
             const url = new URL(req.url);
             const id = url.searchParams.get('id');
             if (!id) return new Response('Missing ID', { status: 400 });
