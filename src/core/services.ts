@@ -95,14 +95,14 @@ export async function createComment(data: CommentInput): Promise<CommentRow> {
 }
 
 export interface GetCommentsQuery {
-    entity_path?: string;
-    entity_path_prefix?: string; // Query using LIKE 'prefix/%'
-    limit?: number;
+    entity_path?: string | undefined;
+    entity_path_prefix?: string | undefined; // Query using LIKE 'prefix/%'
+    limit?: number | undefined;
     /**
      * Opaque cursor string returned from previous response.
      * When provided, results start after the comment with this comment_path.
      */
-    cursor?: string;
+    cursor?: string | undefined;
 }
 
 export interface PaginatedComments {
@@ -123,6 +123,13 @@ function encodeCursor(commentPath: string): string {
 }
 
 export async function getComments(query: GetCommentsQuery): Promise<PaginatedComments> {
+    if (!query.entity_path && !query.entity_path_prefix) {
+        throw new Error('Either entity_path or entity_path_prefix is required to prevent exploiting the entire database.');
+    }
+    if (query.entity_path_prefix && query.entity_path_prefix.length < 3) {
+        throw new Error('entity_path_prefix must be at least 3 characters long to prevent broad scanning.');
+    }
+
     const pageSize = query.limit ?? 20;
     const afterPath = query.cursor ? decodeCursor(query.cursor) : null;
 
@@ -157,9 +164,9 @@ export async function getComments(query: GetCommentsQuery): Promise<PaginatedCom
         const nameCol = getUserNameCol();
         const avatarCol = getUserAvatarCol();
         q = q.leftJoin(userTable, `${table}.user_id`, `${userTable}.${idCol}`)
-             .select(`${table}.*`)
-             .select(`${userTable}.${nameCol} as author_name`)
-             .select(`${userTable}.${avatarCol} as author_avatar`);
+            .select(`${table}.*`)
+            .select(`${userTable}.${nameCol} as author_name`)
+            .select(`${userTable}.${avatarCol} as author_avatar`);
     } else {
         q = q.select(`${table}.*`);
     }

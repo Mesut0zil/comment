@@ -19,6 +19,19 @@ export function createCommentsHandler() {
             const cursor = url.searchParams.get('cursor') || undefined;
             const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
 
+            if (!entity_path && !entity_path_prefix) {
+                return new Response(JSON.stringify({ error: 'Either entity_path or entity_path_prefix is required' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+            if (entity_path_prefix && entity_path_prefix.length < 3) {
+                return new Response(JSON.stringify({ error: 'entity_path_prefix must be at least 3 characters long' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
             try {
                 const result = await getComments({ entity_path, entity_path_prefix, cursor, limit });
                 return new Response(JSON.stringify(result), {
