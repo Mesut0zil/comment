@@ -188,3 +188,79 @@ export async function cacheInvalidateComment(id: number): Promise<void> {
     if (!redis) return;
     await redis.del(dataKey(id)).catch(() => null);
 }
+
+/**
+ * Pushes a single new comment into the cache if the index currently exists.
+ * Does NOT create a partial cache if it was already cleared/expired.
+ */
+export async function cachePushComment(
+    entityPath: string,
+    row: CommentRow,
+    ttl = DEFAULT_TTL,
+): Promise<void> {
+    const redis = getRedis();
+    if (!redis) return;
+
+    const idx = idxKey(entityPath);
+    // If the index doesn't exist, don't create a partial cache.
+    // The next read will fully fetch and populate it.
+    const exists = await redis.exists(idx).catch(() => 0);
+    if (!exists) return;
+
+    const pipeline = redis.pipeline();
+
+    // ZSET index: score=0, member="{comment_path}:{id}"
+    pipeline.zadd(idx, 0, toMember(row));
+
+    // Hash: one field per CommentRow property
+    pipeline.hset(dataKey(row.id), {
+        id: row.id,
+        site: row.site,
+        user_id: row.user_id,
+        content: row.content,
+        depth: row.depth,
+        comment_path: row.comment_path,
+        entity_path: row.entity_path,
+        parent_id: row.parent_id ?? '',
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        deleted_at: row.deleted_at ?? '',
+        author_name: row.author_name ?? '',
+        author_avatar: row.author_avatar ?? '',
+    });
+    pipeline.expire(dataKey(row.id), ttl);
+
+    // Refresh index TTL
+    pipeline.expire(idx, ttl);
+
+    await pipeline.exec().catch(() => null);
+}
+
+/**
+ * Update the content of an existing cached comment.
+ * If it's not cached, does nothing.
+ */
+export async function cacheUpdateCommentContent(id: number, content: string): Promise<void> {
+    const redis = getRedis();
+    if (!redis) return;
+
+    const dKey = dataKey(id);
+    const exists = await redis.exists(dKey).catch(() => 0);
+    if (!exists) return;
+
+    // Only update the content, keep the rest intact with same TTL
+    await redis.hset(dKey, 'content', content).catch(() => null);
+}
+
+/**
+ * Remove a comment from the cache completely incrementally.
+ */
+export async function cacheRemoveComment(entityPath: string, commentPath: string, id: number): Promise<void> {
+    const redis = getRedis();
+    if (!redis) return;
+
+    const pipeline = redis.pipeline();
+    pipeline.del(dataKey(id));
+    pipeline.zrem(idxKey(entityPath), `${commentPath}:${id}`);
+    await pipeline.exec().catch(() => null);
+}

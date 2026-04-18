@@ -1,5 +1,5 @@
 import { getKnex, getTableName, getSiteName, getUserTableName, getUserIdCol, getUserNameCol, getUserAvatarCol } from './config';
-import { cacheFetchPage, cacheIndexComments, cacheInvalidateEntity, cacheInvalidateComment } from './cache';
+import { cacheFetchPage, cacheIndexComments, cacheInvalidateEntity, cacheInvalidateComment, cachePushComment, cacheUpdateCommentContent, cacheRemoveComment } from './cache';
 
 export interface CommentInput {
     user_id: string;
@@ -87,8 +87,8 @@ export async function createComment(data: CommentInput): Promise<CommentRow> {
         const finalRow = await finalRowQuery.first();
         const result = finalRow as CommentRow;
 
-        // Invalidate cache for this entity
-        await cacheInvalidateEntity(data.entity_path);
+        // Push new comment to cache instead of invalidating
+        await cachePushComment(data.entity_path, result);
 
         return result;
     });
@@ -205,8 +205,7 @@ export async function updateComment(id: number, content: string): Promise<number
     const result = await knex(table).where({ id }).update({ content, updated_at: knex.fn.now() });
 
     if (row) {
-        await cacheInvalidateComment(id);        // remove stale Hash
-        await cacheInvalidateEntity(row.entity_path); // remove stale ZSET index
+        await cacheUpdateCommentContent(id, content);
     }
 
     return result;
@@ -216,12 +215,11 @@ export async function deleteComment(id: number): Promise<number> {
     const knex = getKnex();
     const table = getTableName();
 
-    const row = await knex(table).where({ id }).select('entity_path').first();
+    const row = await knex(table).where({ id }).select('entity_path', 'comment_path').first();
     const result = await knex(table).where({ id }).update({ deleted_at: knex.fn.now() });
 
     if (row) {
-        await cacheInvalidateComment(id);        // remove stale Hash
-        await cacheInvalidateEntity(row.entity_path); // remove stale ZSET index
+        await cacheRemoveComment(row.entity_path as string, row.comment_path as string, id);
     }
 
     return result;
