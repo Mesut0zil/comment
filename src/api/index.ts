@@ -10,6 +10,8 @@ export interface CommentHandlerOptions {
      * If a function is provided, it will be called with the content.
      */
     sanitizeHtml?: boolean | ((content: string) => string);
+    /** Maximum length of the comment content (excluding whitespaces) */
+    maxLength?: number;
 }
 
 function escapeHtml(unsafe: string): string {
@@ -78,6 +80,13 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             if (typeof body.content !== 'string' || body.content.trim().length === 0 || body.content.length > 50000) {
                 return new Response(JSON.stringify({ error: 'Invalid or missing content' }), { status: 400 });
             }
+
+            if (options?.maxLength) {
+                const charCount = body.content.replace(/\s+/g, '').length;
+                if (charCount > options.maxLength) {
+                    return new Response(JSON.stringify({ error: `Comment is too long (maximum ${options.maxLength} characters)` }), { status: 400 });
+                }
+            }
             if (typeof body.entity_path !== 'string' || body.entity_path.length > 255) {
                 return new Response(JSON.stringify({ error: 'Invalid or missing entity_path' }), { status: 400 });
             }
@@ -123,6 +132,13 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             }
             if (typeof body.content !== 'string' || body.content.trim().length === 0 || body.content.length > 50000) {
                 return new Response(JSON.stringify({ error: 'Invalid or missing content' }), { status: 400 });
+            }
+
+            if (options?.maxLength) {
+                const charCount = body.content.replace(/\s+/g, '').length;
+                if (charCount > options.maxLength) {
+                    return new Response(JSON.stringify({ error: `Comment is too long (maximum ${options.maxLength} characters)` }), { status: 400 });
+                }
             }
 
             if (options?.getAuth) {
