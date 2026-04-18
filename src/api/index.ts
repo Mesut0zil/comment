@@ -36,7 +36,8 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             const entity_path = url.searchParams.get('entity_path') || undefined;
             const entity_path_prefix = url.searchParams.get('entity_path_prefix') || undefined;
             const cursor = url.searchParams.get('cursor') || undefined;
-            const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
+            const limitParam = url.searchParams.get('limit');
+            const limit = limitParam ? Math.min(Number(limitParam), 100) : undefined;
 
             if (!entity_path && !entity_path_prefix) {
                 return new Response(JSON.stringify({ error: 'Either entity_path or entity_path_prefix is required' }), {
@@ -58,7 +59,8 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
                     headers: { 'Content-Type': 'application/json' }
                 });
             } catch (err: any) {
-                return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+                console.error('[Comment API Error]', err);
+                return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500 });
             }
         },
 
@@ -72,6 +74,13 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             }
 
             const body = await req.json();
+
+            if (typeof body.content !== 'string' || body.content.trim().length === 0 || body.content.length > 50000) {
+                return new Response(JSON.stringify({ error: 'Invalid or missing content' }), { status: 400 });
+            }
+            if (typeof body.entity_path !== 'string' || body.entity_path.length > 255) {
+                return new Response(JSON.stringify({ error: 'Invalid or missing entity_path' }), { status: 400 });
+            }
 
             if (options?.getAuth) {
                 const auth = await options.getAuth(req);
@@ -108,11 +117,19 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
 
             const body = await req.json();
 
+            const commentId = Number(body.id);
+            if (!body.id || isNaN(commentId)) {
+                return new Response(JSON.stringify({ error: 'Invalid ID' }), { status: 400 });
+            }
+            if (typeof body.content !== 'string' || body.content.trim().length === 0 || body.content.length > 50000) {
+                return new Response(JSON.stringify({ error: 'Invalid or missing content' }), { status: 400 });
+            }
+
             if (options?.getAuth) {
                 const auth = await options.getAuth(req);
                 if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
                 
-                const owner = await getCommentOwner(body.id);
+                const owner = await getCommentOwner(commentId);
                 if (!owner) return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
                 if (owner.user_id !== auth.userId && !auth.isAdmin) {
                     return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
@@ -130,7 +147,7 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             }
 
             try {
-                const result = await updateComment(body.id, body.content);
+                const result = await updateComment(commentId, body.content);
                 return new Response(JSON.stringify({ success: result > 0 }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
@@ -149,12 +166,14 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             const url = new URL(req.url);
             const id = url.searchParams.get('id');
             if (!id) return new Response('Missing ID', { status: 400 });
+            const commentId = Number(id);
+            if (isNaN(commentId)) return new Response(JSON.stringify({ error: 'Invalid ID' }), { status: 400 });
 
             if (options?.getAuth) {
                 const auth = await options.getAuth(req);
                 if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
                 
-                const owner = await getCommentOwner(Number(id));
+                const owner = await getCommentOwner(commentId);
                 if (!owner) return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
                 if (owner.user_id !== auth.userId && !auth.isAdmin) {
                     return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
@@ -164,7 +183,7 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             }
 
             try {
-                const result = await deleteComment(Number(id));
+                const result = await deleteComment(commentId);
                 return new Response(JSON.stringify({ success: result > 0 }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }

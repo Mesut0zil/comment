@@ -115,7 +115,13 @@ export async function checkRateLimit(identifier: string): Promise<boolean> {
 
 /** Derive best-effort IP from a Next.js / Web API Request */
 export function getRequestIp(req: Request): string {
-    const headers = (req as any).headers as Headers;
+    const nextReq = req as any;
+    if (nextReq.ip) return nextReq.ip;
+    
+    // Fallback if not hosted on Vercel or similar platforms that populate req.ip.
+    // Note: If you self-host, ensure your reverse proxy (e.g. Nginx, Cloudflare) properly overwrites
+    // these headers to prevent rate limit IP spoofing.
+    const headers = nextReq.headers as Headers;
     return (
         headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
         headers.get('x-real-ip') ||
