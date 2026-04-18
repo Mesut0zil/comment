@@ -197,15 +197,13 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
                 }
             }
 
+            let currentUserId: string | undefined = undefined;
+            let isAdmin: boolean | undefined = undefined;
             if (options?.getAuth) {
                 const auth = await options.getAuth(req);
                 if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-                
-                const owner = await getCommentOwner(commentId);
-                if (!owner) return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
-                if (owner.user_id !== auth.userId && !auth.isAdmin) {
-                    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
-                }
+                currentUserId = auth.userId;
+                isAdmin = auth.isAdmin;
             } else {
                 return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
             }
@@ -219,12 +217,14 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             }
 
             try {
-                const result = await updateComment(commentId, body.content);
+                const result = await updateComment(commentId, body.content, currentUserId, isAdmin);
                 return new Response(JSON.stringify({ success: result > 0 }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
                 });
             } catch (err: any) {
+                if (err.message === 'Forbidden') return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
+                if (err.message === 'Comment not found') return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
                 return new Response(JSON.stringify({ error: err.message }), { status: 500 });
             }
         },
@@ -241,26 +241,26 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             const commentId = Number(id);
             if (isNaN(commentId)) return new Response(JSON.stringify({ error: 'Invalid ID' }), { status: 400 });
 
+            let currentUserId: string | undefined = undefined;
+            let isAdmin: boolean | undefined = undefined;
             if (options?.getAuth) {
                 const auth = await options.getAuth(req);
                 if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-                
-                const owner = await getCommentOwner(commentId);
-                if (!owner) return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
-                if (owner.user_id !== auth.userId && !auth.isAdmin) {
-                    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
-                }
+                currentUserId = auth.userId;
+                isAdmin = auth.isAdmin;
             } else {
                 return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
             }
 
             try {
-                const result = await deleteComment(commentId);
+                const result = await deleteComment(commentId, currentUserId, isAdmin);
                 return new Response(JSON.stringify({ success: result > 0 }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
                 });
             } catch (err: any) {
+                if (err.message === 'Forbidden') return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
+                if (err.message === 'Comment not found') return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
                 return new Response(JSON.stringify({ error: err.message }), { status: 500 });
             }
         }

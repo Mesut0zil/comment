@@ -196,31 +196,33 @@ export async function getComments(query: GetCommentsQuery): Promise<PaginatedCom
     return { data, hasMore, nextCursor };
 }
 
-export async function updateComment(id: number, content: string): Promise<number> {
+export async function updateComment(id: number, content: string, userId?: string, isAdmin?: boolean): Promise<number> {
     const knex = getKnex();
     const table = getTableName();
 
-    // Fetch before update so we can invalidate the right entity
-    const row = await knex(table).where({ id }).select('entity_path').first();
+    // Fetch before update so we can invalidate the right entity and verify owner
+    const row = await knex(table).where({ id }).select('entity_path', 'user_id').first();
+    if (!row) throw new Error('Comment not found');
+    if (userId && row.user_id !== userId && !isAdmin) throw new Error('Forbidden');
+
     const result = await knex(table).where({ id }).update({ content, updated_at: knex.fn.now() });
 
-    if (row) {
-        await cacheUpdateCommentContent(id, content);
-    }
+    await cacheUpdateCommentContent(id, content);
 
     return result;
 }
 
-export async function deleteComment(id: number): Promise<number> {
+export async function deleteComment(id: number, userId?: string, isAdmin?: boolean): Promise<number> {
     const knex = getKnex();
     const table = getTableName();
 
-    const row = await knex(table).where({ id }).select('entity_path', 'comment_path').first();
+    const row = await knex(table).where({ id }).select('entity_path', 'comment_path', 'user_id').first();
+    if (!row) throw new Error('Comment not found');
+    if (userId && row.user_id !== userId && !isAdmin) throw new Error('Forbidden');
+
     const result = await knex(table).where({ id }).update({ deleted_at: knex.fn.now() });
 
-    if (row) {
-        await cacheRemoveComment(row.entity_path as string, row.comment_path as string, id);
-    }
+    await cacheRemoveComment(row.entity_path as string, row.comment_path as string, id);
 
     return result;
 }
