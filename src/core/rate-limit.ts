@@ -69,7 +69,8 @@ async function checkRateLimitRedis(identifier: string): Promise<boolean> {
             token,
         );
         return result === 1;
-    } catch {
+    } catch (error) {
+        console.error('[RateLimit Redis Error]', error);
         return true; // fail open — never block on Redis errors
     }
 }

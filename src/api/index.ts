@@ -27,7 +27,7 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
     return {
         async GET(req: NextRequest) {
             const ip = getRequestIp(req);
-            if (!await checkRateLimit(ip)) {
+            if (!await checkRateLimit('get:' + ip)) {
                 return new Response(JSON.stringify({ error: 'Too many requests' }), {
                     status: 429,
                     headers: { 'Retry-After': '60' }
@@ -68,7 +68,7 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
 
         async POST(req: NextRequest) {
             const ip = getRequestIp(req);
-            if (!await checkRateLimit(ip)) {
+            if (!await checkRateLimit('post:' + ip)) {
                 return new Response(JSON.stringify({ error: 'Too many requests' }), {
                     status: 429,
                     headers: { 'Retry-After': '60' }
@@ -120,7 +120,7 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
 
         async PUT(req: NextRequest) {
             const ip = getRequestIp(req);
-            if (!await checkRateLimit(ip)) {
+            if (!await checkRateLimit('put:' + ip)) {
                 return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 });
             }
 
@@ -175,7 +175,7 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
 
         async DELETE(req: NextRequest) {
             const ip = getRequestIp(req);
-            if (!await checkRateLimit(ip)) {
+            if (!await checkRateLimit('delete:' + ip)) {
                 return new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 });
             }
 

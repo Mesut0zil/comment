@@ -32,7 +32,7 @@ let internalKnex: Knex | null = null;
 let currentConfig: CommentConfig = {
     tableName: 'comments',
     site: 'default',
-    rateLimit: { max: 60, windowSec: 60 },
+    rateLimit: {},
 };
 
 export function configure(config: CommentConfig) {
