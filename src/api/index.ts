@@ -12,6 +12,8 @@ export interface CommentHandlerOptions {
     sanitizeHtml?: boolean | ((content: string) => string);
     /** Maximum length of the comment content (excluding whitespaces) */
     maxLength?: number;
+    /** Cloudflare Turnstile secret key for server-side verification of POST/PUT requests */
+    turnstileSecret?: string;
 }
 
 function escapeHtml(unsafe: string): string {
@@ -76,6 +78,33 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
             }
 
             const body = await req.json();
+
+            if (options?.turnstileSecret) {
+                const token = body.turnstileToken;
+                if (!token || typeof token !== 'string') {
+                    return new Response(JSON.stringify({ error: 'Turnstile verification required' }), { status: 400 });
+                }
+                try {
+                    const formData = new URLSearchParams();
+                    formData.append('secret', options.turnstileSecret);
+                    formData.append('response', token);
+                    formData.append('remoteip', ip);
+                    
+                    const tsRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                    });
+                    const tsData = await tsRes.json();
+                    
+                    if (!tsData.success) {
+                        return new Response(JSON.stringify({ error: 'Turnstile verification failed' }), { status: 403 });
+                    }
+                } catch (err) {
+                    console.error('[Turnstile Error]', err);
+                    return new Response(JSON.stringify({ error: 'Error validating Turnstile token' }), { status: 500 });
+                }
+            }
 
             if (typeof body.content !== 'string' || body.content.trim().length === 0 || body.content.length > 50000) {
                 return new Response(JSON.stringify({ error: 'Invalid or missing content' }), { status: 400 });
