@@ -4,6 +4,21 @@ import type { NextRequest } from 'next/server';
 
 export interface CommentHandlerOptions {
     getAuth?: (req: NextRequest) => Promise<{ userId: string | null; isAdmin?: boolean }> | { userId: string | null; isAdmin?: boolean };
+    /** 
+     * Optional boolean or custom function to sanitize comment content. 
+     * If true, applies a basic HTML entity encoding to prevent XSS. 
+     * If a function is provided, it will be called with the content.
+     */
+    sanitizeHtml?: boolean | ((content: string) => string);
+}
+
+function escapeHtml(unsafe: string): string {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
 }
 
 export function createCommentsHandler(options?: CommentHandlerOptions) {
@@ -66,6 +81,14 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
                 return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
             }
 
+            if (body.content && options?.sanitizeHtml) {
+                if (typeof options.sanitizeHtml === 'function') {
+                    body.content = options.sanitizeHtml(body.content);
+                } else if (options.sanitizeHtml === true) {
+                    body.content = escapeHtml(body.content);
+                }
+            }
+
             try {
                 const result = await createComment(body);
                 return new Response(JSON.stringify(result), {
@@ -96,6 +119,14 @@ export function createCommentsHandler(options?: CommentHandlerOptions) {
                 }
             } else {
                 return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
+            }
+
+            if (body.content && options?.sanitizeHtml) {
+                if (typeof options.sanitizeHtml === 'function') {
+                    body.content = options.sanitizeHtml(body.content);
+                } else if (options.sanitizeHtml === true) {
+                    body.content = escapeHtml(body.content);
+                }
             }
 
             try {
