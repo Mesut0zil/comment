@@ -17,7 +17,7 @@ By default, Cloudflare **DOES NOT** cache API endpoints (e.g., `/api/*`). We mus
 ### Expression:
 *Only cache GET (read) requests sent to the comment API path.*
 ```text
-(http.request.uri.path starts_with "/api/comments" and http.request.method eq "GET")
+(starts_with(http.request.uri.path, "/api/comments") and http.request.method eq "GET")
 ```
 
 ### Cache eligibility settings:
@@ -40,7 +40,7 @@ This prevents comment spamming and abuse from automated tools repeatedly hitting
 - **Rule name**: `Limit Spam Comments`
 - **Expression**:
   ```text
-  (http.request.uri.path starts_with "/api/comments" and http.request.method ne "GET")
+  (starts_with(http.request.uri.path, "/api/comments") and http.request.method ne "GET")
   ```
 - **Action**: `Block` (or `Managed Challenge` if you prefer to show a Captcha instead of outright rejection).
 - **With the same characteristics**: `IP` (Client IP) or specific `Headers`.
@@ -55,7 +55,7 @@ Even though GET requests are cached, malicious actors could still attempt Cache-
 - **Rule name**: `Throttling Comment Loaders`
 - **Expression**:
   ```text
-  (http.request.uri.path starts_with "/api/comments" and http.request.method eq "GET")
+  (starts_with(http.request.uri.path, "/api/comments") and http.request.method eq "GET")
   ```
 - **Action**: `Managed Challenge` *(legitimate users whose app polls normally every 5 seconds will never hit this limit, so only automated scrapers will trigger the CAPTCHA).*
 - **When requests exceed / Rate Limit**:
