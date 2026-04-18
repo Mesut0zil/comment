@@ -1,8 +1,12 @@
-import { createComment, getComments, deleteComment, updateComment } from '../core/services';
+import { createComment, getComments, deleteComment, updateComment, getCommentOwner } from '../core/services';
 import { checkRateLimit, getRequestIp } from '../core/rate-limit';
 import type { NextRequest } from 'next/server';
 
-export function createCommentsHandler() {
+export interface CommentHandlerOptions {
+    getAuth?: (req: NextRequest) => Promise<{ userId: string | null; isAdmin?: boolean }> | { userId: string | null; isAdmin?: boolean };
+}
+
+export function createCommentsHandler(options?: CommentHandlerOptions) {
     return {
         async GET(req: NextRequest) {
             const ip = getRequestIp(req);
@@ -53,6 +57,15 @@ export function createCommentsHandler() {
             }
 
             const body = await req.json();
+
+            if (options?.getAuth) {
+                const auth = await options.getAuth(req);
+                if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+                body.user_id = auth.userId;
+            } else {
+                return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
+            }
+
             try {
                 const result = await createComment(body);
                 return new Response(JSON.stringify(result), {
@@ -71,6 +84,20 @@ export function createCommentsHandler() {
             }
 
             const body = await req.json();
+
+            if (options?.getAuth) {
+                const auth = await options.getAuth(req);
+                if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+                
+                const owner = await getCommentOwner(body.id);
+                if (!owner) return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
+                if (owner.user_id !== auth.userId && !auth.isAdmin) {
+                    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
+                }
+            } else {
+                return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
+            }
+
             try {
                 const result = await updateComment(body.id, body.content);
                 return new Response(JSON.stringify({ success: result > 0 }), {
@@ -91,6 +118,20 @@ export function createCommentsHandler() {
             const url = new URL(req.url);
             const id = url.searchParams.get('id');
             if (!id) return new Response('Missing ID', { status: 400 });
+
+            if (options?.getAuth) {
+                const auth = await options.getAuth(req);
+                if (!auth.userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+                
+                const owner = await getCommentOwner(Number(id));
+                if (!owner) return new Response(JSON.stringify({ error: 'Comment not found' }), { status: 404 });
+                if (owner.user_id !== auth.userId && !auth.isAdmin) {
+                    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
+                }
+            } else {
+                return new Response(JSON.stringify({ error: 'Authentication not configured' }), { status: 401 });
+            }
+
             try {
                 const result = await deleteComment(Number(id));
                 return new Response(JSON.stringify({ success: result > 0 }), {

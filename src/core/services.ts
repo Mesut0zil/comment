@@ -174,7 +174,8 @@ export async function getComments(query: GetCommentsQuery): Promise<PaginatedCom
     if (query.entity_path) {
         q = q.where({ [`${table}.entity_path`]: query.entity_path });
     } else if (query.entity_path_prefix) {
-        q = q.where(`${table}.entity_path`, 'LIKE', `${query.entity_path_prefix}%`);
+        const escapedPrefix = query.entity_path_prefix.replace(/([_%])/g, '\\$1');
+        q = q.where(`${table}.entity_path`, 'LIKE', `${escapedPrefix}%`);
     }
 
     if (afterPath) {
@@ -224,6 +225,14 @@ export async function deleteComment(id: number): Promise<number> {
     }
 
     return result;
+}
+
+export async function getCommentOwner(id: number): Promise<{ user_id: string } | null> {
+    const knex = getKnex();
+    const table = getTableName();
+    
+    const row = await knex(table).where({ id }).select('user_id').first();
+    return row ? { user_id: row.user_id as string } : null;
 }
 
 // Tree Builder Logic
