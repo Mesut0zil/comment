@@ -13,9 +13,9 @@ Follow these steps to integrate the comment package into another project (e.g., 
 Since this project is hosted on GitHub, you can install it directly into your main project via the repository URL:
 
 ```bash
-npm install github:inhvn/comment
+npm install github:Mesut0zil/comment
 # or
-yarn add github:inhvn/comment
+yarn add github:Mesut0zil/comment
 ```
 *(Note: Your main project must have `react`, `react-dom`, and `knex` installed as they are required peer dependencies).*
 

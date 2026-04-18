@@ -7,18 +7,24 @@
  *
  * - In-memory fixed window (fallback when Redis is not configured)
  */
-import { getRateLimitConfig, getSiteName } from './config';
+import { getReadRateLimitConfig, getWriteRateLimitConfig, getSiteName } from './config';
 import { getRedis } from './cache';
 
 /** In-memory fallback: key → [count, windowStartEpochSec] */
 const memStore = new Map<string, [number, number]>();
 
+function getCfgFor(identifier: string) {
+    if (identifier.startsWith('get:')) return getReadRateLimitConfig();
+    return getWriteRateLimitConfig(); // Default to write config for post/put/delete
+}
+
 setInterval(() => {
-    const cfg = getRateLimitConfig();
-    if (!cfg) return;
     const now = Math.floor(Date.now() / 1000);
     for (const [k, [, windowStart]] of memStore) {
-        if (now - windowStart > (cfg as any).windowSec) memStore.delete(k);
+        const cfg: any = getCfgFor(k);
+        if (!cfg || now - windowStart > cfg.windowSec) {
+            memStore.delete(k);
+        }
     }
 }, 5 * 60 * 1000).unref?.();
 
@@ -50,7 +56,7 @@ end
 
 async function checkRateLimitRedis(identifier: string): Promise<boolean> {
     const redis = getRedis();
-    const cfg = getRateLimitConfig();
+    const cfg = getCfgFor(identifier);
     if (!redis || !cfg) return true;
 
     const { max, windowSec } = cfg as Required<typeof cfg>;
@@ -80,7 +86,7 @@ async function checkRateLimitRedis(identifier: string): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 function checkRateLimitMemory(identifier: string): boolean {
-    const cfg = getRateLimitConfig();
+    const cfg = getCfgFor(identifier);
     if (cfg === false) return true;
     const { max, windowSec } = cfg as Required<typeof cfg>;
     const now = Math.floor(Date.now() / 1000);
@@ -105,7 +111,7 @@ function checkRateLimitMemory(identifier: string): boolean {
  * Uses Redis ZSET sliding window when available, in-memory fixed window otherwise.
  */
 export async function checkRateLimit(identifier: string): Promise<boolean> {
-    const cfg = getRateLimitConfig();
+    const cfg = getCfgFor(identifier);
     if (cfg === false) return true;
 
     const redis = getRedis();

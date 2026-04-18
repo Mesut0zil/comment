@@ -13,7 +13,7 @@
  * 3. ZSET  – sliding-window rate limiting (in rate-limit.ts)
  *    Key:    rl:{site}:{identifier}
  */
-import { getRedisUrl, isRedisEnabled, getSiteName } from './config';
+import { getRedisUrl, isRedisEnabled, getSiteName, getCacheTtl } from './config';
 import type { CommentRow } from './services';
 
 let _redis: any | null = null;
@@ -52,8 +52,6 @@ function toMember(row: CommentRow): string {
     return `${row.comment_path}:${row.id}`;
 }
 
-const DEFAULT_TTL = 120; // seconds
-
 // ---------------------------------------------------------------------------
 // Write helpers
 // ---------------------------------------------------------------------------
@@ -66,10 +64,12 @@ const DEFAULT_TTL = 120; // seconds
 export async function cacheIndexComments(
     entityPath: string,
     rows: CommentRow[],
-    ttl = DEFAULT_TTL,
+    ttl?: number,
 ): Promise<void> {
     const redis = getRedis();
     if (!redis || rows.length === 0) return;
+
+    const actualTtl = ttl ?? getCacheTtl();
 
     const pipeline = redis.pipeline();
     const idx = idxKey(entityPath);
@@ -94,10 +94,10 @@ export async function cacheIndexComments(
             author_name: row.author_name ?? '',
             author_avatar: row.author_avatar ?? '',
         });
-        pipeline.expire(dataKey(row.id), ttl);
+        pipeline.expire(dataKey(row.id), actualTtl);
     }
 
-    pipeline.expire(idx, ttl);
+    pipeline.expire(idx, actualTtl);
     await pipeline.exec().catch(() => null);
 }
 
@@ -196,10 +196,12 @@ export async function cacheInvalidateComment(id: number): Promise<void> {
 export async function cachePushComment(
     entityPath: string,
     row: CommentRow,
-    ttl = DEFAULT_TTL,
+    ttl?: number,
 ): Promise<void> {
     const redis = getRedis();
     if (!redis) return;
+
+    const actualTtl = ttl ?? getCacheTtl();
 
     const idx = idxKey(entityPath);
     // If the index doesn't exist, don't create a partial cache.
@@ -228,10 +230,10 @@ export async function cachePushComment(
         author_name: row.author_name ?? '',
         author_avatar: row.author_avatar ?? '',
     });
-    pipeline.expire(dataKey(row.id), ttl);
+    pipeline.expire(dataKey(row.id), actualTtl);
 
     // Refresh index TTL
-    pipeline.expire(idx, ttl);
+    pipeline.expire(idx, actualTtl);
 
     await pipeline.exec().catch(() => null);
 }

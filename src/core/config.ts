@@ -16,8 +16,12 @@ export interface CommentConfig {
     redisUrl?: string;
     /** Explicitly enable Redis caching. Requires redisUrl to also be set. Default: false */
     enableRedis?: boolean;
-    /** Rate limiting options. Pass false to disable entirely. */
-    rateLimit?: RateLimitConfig | false;
+    /** Rate limiting options for read operations (GET). Pass false to disable. */
+    readRateLimit?: RateLimitConfig | false;
+    /** Rate limiting options for write operations (POST, PUT, DELETE). Pass false to disable. */
+    writeRateLimit?: RateLimitConfig | false;
+    /** Default TTL (in seconds) for Redis cache. Default: 120 */
+    cacheTtl?: number;
     /** Table name for users. If provided, comments will be left-joined to fetch author details. */
     userTableName?: string;
     /** User ID column name in user table. Default: 'id' */
@@ -32,7 +36,8 @@ let internalKnex: Knex | null = null;
 let currentConfig: CommentConfig = {
     tableName: 'comments',
     site: 'default',
-    rateLimit: {},
+    readRateLimit: {},
+    writeRateLimit: {},
 };
 
 export function configure(config: CommentConfig) {
@@ -73,12 +78,25 @@ export function isRedisEnabled(): boolean {
     return flag === true && !!getRedisUrl();
 }
 
-export function getRateLimitConfig(): RateLimitConfig | false {
-    if (currentConfig.rateLimit === false) return false;
-    const cfg = currentConfig.rateLimit || {};
+export function getCacheTtl(): number {
+    return currentConfig.cacheTtl ?? Number(process.env['COMMENT_CACHE_TTL'] ?? 120);
+}
+
+export function getReadRateLimitConfig(): RateLimitConfig | false {
+    if (currentConfig.readRateLimit === false) return false;
+    const cfg = currentConfig.readRateLimit || {};
     return {
-        max: cfg.max ?? Number(process.env['COMMENT_RATE_LIMIT_MAX'] ?? 60),
-        windowSec: cfg.windowSec ?? Number(process.env['COMMENT_RATE_LIMIT_WINDOW_SEC'] ?? 60),
+        max: cfg.max ?? Number(process.env['COMMENT_READ_RATE_LIMIT_MAX'] ?? 60),
+        windowSec: cfg.windowSec ?? Number(process.env['COMMENT_READ_RATE_LIMIT_WINDOW_SEC'] ?? 10),
+    };
+}
+
+export function getWriteRateLimitConfig(): RateLimitConfig | false {
+    if (currentConfig.writeRateLimit === false) return false;
+    const cfg = currentConfig.writeRateLimit || {};
+    return {
+        max: cfg.max ?? Number(process.env['COMMENT_WRITE_RATE_LIMIT_MAX'] ?? 3),
+        windowSec: cfg.windowSec ?? Number(process.env['COMMENT_WRITE_RATE_LIMIT_WINDOW_SEC'] ?? 10),
     };
 }
 
